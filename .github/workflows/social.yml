@@ -1,0 +1,42 @@
+name: Tytyshi TikTok & Insta Bot
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Tourne automatiquement toutes les heures !
+  workflow_dispatch:     # Pour tester en 1 clic
+
+permissions:
+  contents: write
+
+jobs:
+  check-socials:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install libraries
+        run: |
+          pip install playwright playwright-stealth requests yt-dlp
+          playwright install --with-deps chromium
+
+      - name: Create memory file if missing
+        run: touch seen_social_posts.txt
+
+      - name: Run Social Media Check
+        env:
+          DISCORD_WEBHOOK_SOCIAL: ${{ secrets.DISCORD_WEBHOOK_SOCIAL }}
+        run: python social_bot.py
+
+      - name: Save seen posts to memory
+        run: |
+          git config --global user.name "Social Alert Bot"
+          git config --global user.email "bot@noreply.github.com"
+          git add seen_social_posts.txt
+          git diff --staged --quiet || git commit -m "Update seen social posts"
+          git push

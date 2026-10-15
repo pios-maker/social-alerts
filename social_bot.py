@@ -15,8 +15,17 @@ from playwright_stealth import Stealth
 TIKTOK_USER = "tytyshi"
 TIKTOK_URL = f"https://www.tiktok.com/@{TIKTOK_USER}"
 
-# Une vidéo n'déclenche une alerte que si elle a été publiée il y a moins de 3 h
+# A video only triggers an alert if it was published less than 3 hours ago
 MAX_AGE_SECONDS = 10800
+
+# Discord user ID of katchu_ (a number like 123456789012345678).
+# To get it: Discord > Settings > Advanced > enable Developer Mode,
+# then right-click katchu_ > "Copy User ID".
+PING_USER_ID = "644995150774272020"
+
+# True  = send a silent "check done, no new video" message after every check
+# False = only send messages when there is a new video
+SEND_STATUS_EVERY_CHECK = True
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_SOCIAL")
 MEMORY_FILE = "seen_social_posts.txt"
@@ -36,17 +45,30 @@ def save_seen(item_id: str):
 
 
 def get_tiktok_timestamp(video_id: str) -> int:
-    """Heure de publication cachée dans l'ID de la vidéo TikTok (timestamp Unix)."""
+    """Publication time hidden in the TikTok video ID (Unix timestamp)."""
     try:
         return int(video_id) >> 32
     except Exception:
         return 0
 
 
-def send_discord_alert(username: str, post_url: str, now_str: str) -> bool:
+def post_to_discord(payload: dict) -> bool:
     if not DISCORD_WEBHOOK_URL:
         print("❌ ERROR: DISCORD_WEBHOOK_SOCIAL secret is missing!")
         return False
+    try:
+        res = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+        print(f"   [DISCORD] Status {res.status_code}")
+        return res.status_code in (200, 204)
+    except Exception as e:
+        print(f"   [DISCORD ERROR] {e}")
+        return False
+
+
+def send_video_alert(username: str, post_url: str, now_str: str) -> bool:
+    """New video: pings katchu_."""
+    has_id = PING_USER_ID.isdigit()
+    mention = f"<@{PING_USER_ID}>" if has_id else "@katchu_"
 
     embed = {
         "title": f"🎵 New TikTok video from @{username}!",
@@ -60,21 +82,29 @@ def send_discord_alert(username: str, post_url: str, now_str: str) -> bool:
     }
     payload = {
         "username": "Tytyshi Alert Bot",
-        "content": f"@everyone 🎵 **{username} a sorti une nouvelle vidéo sur son TikTok !**",
+        "content": f"{mention} 🎵 **{username} posted a new video on TikTok!**",
         "embeds": [embed],
+        # Only this user can be pinged (never @everyone)
+        "allowed_mentions": {"users": [PING_USER_ID] if has_id else []},
     }
+    return post_to_discord(payload)
 
-    try:
-        res = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
-        print(f"   [DISCORD] Alert sent ({post_url}) -> Status {res.status_code}")
-        return res.status_code in (200, 204)
-    except Exception as e:
-        print(f"   [DISCORD ERROR] {e}")
-        return False
+
+def send_status(text: str, color: int, now_str: str) -> bool:
+    """Silent message: no mention at all."""
+    payload = {
+        "username": "Tytyshi Alert Bot",
+        "embeds": [{
+            "description": text,
+            "color": color,
+            "footer": {"text": f"TikTok Monitor • {now_str}"},
+        }],
+        "allowed_mentions": {"parse": []},
+    }
+    return post_to_discord(payload)
 
 
 def get_tiktok_via_ytdlp() -> list:
-    """Récupère les dernières vidéos TikTok via yt-dlp."""
     video_ids = []
     try:
         cmd = ["yt-dlp", "--flat-playlist", "--playlist-end", "6", "--print", "id", TIKTOK_URL]
@@ -89,7 +119,7 @@ def get_tiktok_via_ytdlp() -> list:
 
 
 async def get_tiktok_via_browser() -> list:
-    """Plan B : ouvre le profil dans un navigateur et cherche les liens vidéo."""
+    """Plan B: open the profile in a browser and look for video links."""
     video_ids = []
     async with Stealth().use_async(async_playwright()) as p:
         browser = await p.chromium.launch(
@@ -130,6 +160,7 @@ async def main():
 
     print(f"-> Checked TikTok ({len(tt_ids)} videos)")
 
+    alerts_sent = 0
     for vid in tt_ids:
         key = f"TT_{vid}"
         if key in seen:
@@ -141,14 +172,30 @@ async def main():
 
         if age_seconds is not None and age_seconds <= MAX_AGE_SECONDS:
             print(f"   🔥 NEW TIKTOK ({age_seconds // 60} min ago): {post_url}")
-            # On ne mémorise que si l'alerte est bien partie
-            if send_discord_alert(TIKTOK_USER, post_url, now_str):
+            # Only remember it if the alert really went out
+            if send_video_alert(TIKTOK_USER, post_url, now_str):
                 save_seen(key)
                 seen.add(key)
+                alerts_sent += 1
         else:
-            # Ancienne vidéo : on la mémorise sans alerter
+            # Old video: remember it without alerting
             save_seen(key)
             seen.add(key)
+
+    # Silent status message when no video alert was sent
+    if SEND_STATUS_EVERY_CHECK and alerts_sent == 0:
+        if not tt_ids:
+            send_status(
+                "⚠️ Check done, but I **could not read the TikTok profile** "
+                "(blocked or no response). No video could be checked.",
+                16763904, now_str,
+            )
+        else:
+            send_status(
+                f"✅ Check done at {now_str} — **no new video** "
+                f"({len(tt_ids)} videos checked).",
+                3447003, now_str,
+            )
 
     print("=== CHECK COMPLETE ===")
 

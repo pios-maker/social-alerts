@@ -1,16 +1,21 @@
-name: Tytyshi TikTok & Insta Bot
+name: Tytyshi TikTok Bot
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Tourne automatiquement toutes les heures !
-  workflow_dispatch:     # Pour tester en 1 clic
+    - cron: '7,37 * * * *'   # 2 fois par heure, décalé de l'heure pile
+  workflow_dispatch:         # Pour tester en 1 clic
 
 permissions:
   contents: write
 
+concurrency:
+  group: social-check
+  cancel-in-progress: false
+
 jobs:
   check-socials:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,6 +24,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Install libraries
         run: |
@@ -28,15 +34,15 @@ jobs:
       - name: Create memory file if missing
         run: touch seen_social_posts.txt
 
-      - name: Run Social Media Check
+      - name: Run TikTok Check
         env:
           DISCORD_WEBHOOK_SOCIAL: ${{ secrets.DISCORD_WEBHOOK_SOCIAL }}
         run: python social_bot.py
 
       - name: Save seen posts to memory
+        if: always()
         run: |
-          git config --global user.name "Social Alert Bot"
-          git config --global user.email "bot@noreply.github.com"
+          git config user.name "Social Alert Bot"
+          git config user.email "bot@noreply.github.com"
           git add seen_social_posts.txt
-          git diff --staged --quiet || git commit -m "Update seen social posts"
-          git push
+          git diff --staged --quiet || (git commit -m "Update seen social posts" && git pull --rebase && git push)

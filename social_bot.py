@@ -26,7 +26,7 @@ PING_USER_ID = "644995150774272020"
 
 # True  = send a silent "check done, no new video" message after every check
 # False = only send messages when there is a new video
-SEND_STATUS_EVERY_CHECK = True
+SEND_STATUS_EVERY_CHECK = False
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_SOCIAL")
 MEMORY_FILE = "seen_social_posts.txt"
@@ -67,23 +67,20 @@ def post_to_discord(payload: dict) -> bool:
 
 
 def send_video_alert(username: str, post_url: str, now_str: str) -> bool:
-    """New video: pings katchu_."""
+    """New video: pings katchu_ with just 'nouvelle vidéo' and no username."""
     has_id = PING_USER_ID.isdigit()
-    mention = f"<@{PING_USER_ID}>" if has_id else "@katchu_"
+    mention = f"<@{PING_USER_ID}>" if has_id else ""
 
     embed = {
-        "title": f"🎵 New TikTok video from @{username}!",
-        "description": (
-            f"**@{username}** just published a new video on **TikTok**!\n\n"
-            f"👉 **[Click here to watch it on TikTok]({post_url})**"
-        ),
+        "title": "nouvelle vidéo",
+        "description": f"👉 **[Ouvrir la vidéo]({post_url})**",
         "url": post_url,
         "color": 16711760,
-        "footer": {"text": f"TikTok Monitor • Detected at {now_str}"},
+        "footer": {"text": f"Détecté à {now_str}"},
     }
     payload = {
-        "username": "Tytyshi Alert Bot",
-        "content": f"{mention} 🎵 **{username} posted a new video on TikTok!**",
+        "username": "Alert Bot",
+        "content": f"{mention} nouvelle vidéo".strip(),
         "embeds": [embed],
         # Only this user can be pinged (never @everyone)
         "allowed_mentions": {"users": [PING_USER_ID] if has_id else []},
@@ -94,11 +91,11 @@ def send_video_alert(username: str, post_url: str, now_str: str) -> bool:
 def send_status(text: str, color: int, now_str: str) -> bool:
     """Silent message: no mention at all."""
     payload = {
-        "username": "Tytyshi Alert Bot",
+        "username": "Alert Bot",
         "embeds": [{
             "description": text,
             "color": color,
-            "footer": {"text": f"TikTok Monitor • {now_str}"},
+            "footer": {"text": f"Monitor • {now_str}"},
         }],
         "allowed_mentions": {"parse": []},
     }
@@ -203,9 +200,9 @@ async def main():
         else:
             lines.append(f"✅ Check done at {now_str}.")
         for user, n in checked.items():
-            lines.append(f"• @{user}: {n} videos checked")
+            lines.append(f"• {n} videos checked")
         for user in failed:
-            lines.append(f"⚠️ @{user}: **could not be read** (blocked or no response)")
+            lines.append(f"⚠️ Account could not be read (blocked or no response)")
         color = 16763904 if failed else 3447003
         send_status("\n".join(lines), color, now_str)
 

@@ -16,6 +16,7 @@ from playwright_stealth import Stealth
 TIKTOK_USERS = [
     "tytyshi",
     "._leave.me_alone",
+    "meyxdollw",
 ]
 
 # A video only triggers an alert if it was published less than 3 hours ago

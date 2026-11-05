@@ -17,6 +17,7 @@ TIKTOK_USERS = [
     "tytyshi",
     "._leave.me_alone",
     "meyxdollw",
+    "mahsa9946",
 ]
 
 # A video only triggers an alert if it was published less than 3 hours ago

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 import subprocess
@@ -30,6 +31,9 @@ PING_USER_ID = "644995150774272020"
 # False = only send messages when there is a new video
 SEND_STATUS_EVERY_CHECK = False
 
+# Limite de taille pour l'envoi de fichier sur Discord (9.5 Mo par sécurité)
+MAX_DISCORD_FILE_MB = 9.5
+
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_SOCIAL")
 MEMORY_FILE = "seen_social_posts.txt"
 TZ = ZoneInfo("Europe/Brussels")
@@ -60,7 +64,7 @@ def post_to_discord(payload: dict) -> bool:
         print("❌ ERROR: DISCORD_WEBHOOK_SOCIAL secret is missing!")
         return False
     try:
-        res = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+        res = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=15)
         print(f"   [DISCORD] Status {res.status_code}")
         return res.status_code in (200, 204)
     except Exception as e:
@@ -68,24 +72,80 @@ def post_to_discord(payload: dict) -> bool:
         return False
 
 
-def send_video_alert(username: str, post_url: str, now_str: str) -> bool:
-    """New video: pings katchu_ with just 'nouvelle vidéo' and no username."""
+def download_tiktok_video(post_url: str, video_id: str) -> str | None:
+    """Télécharge la vidéo TikTok en MP4 (< 9.5 Mo) pour l'envoyer sur Discord."""
+    output_path = f"tiktok_{video_id}.mp4"
+    if os.path.exists(output_path):
+        os.remove(output_path)
+
+    # On demande à yt-dlp un format mp4 inférieur à 9.5 Mo, sinon le meilleur mp4 dispo
+    cmd = [
+        "yt-dlp",
+        "-f", "best[ext=mp4][filesize<9.5M]/best[ext=mp4]/best",
+        "--merge-output-format", "mp4",
+        "--no-playlist",
+        "-o", output_path,
+        post_url,
+    ]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=75)
+        if os.path.exists(output_path):
+            size_mb = os.path.getsize(output_path) / (1024 * 1024)
+            print(f"   [DOWNLOAD] Video downloaded ({size_mb:.2f} MB)")
+            if 0.01 < size_mb <= MAX_DISCORD_FILE_MB:
+                return output_path
+            else:
+                print(f"   [!] File too large for Discord ({size_mb:.2f} MB > {MAX_DISCORD_FILE_MB} MB)")
+                os.remove(output_path)
+    except Exception as e:
+        print(f"   [!] Video download failed: {e}")
+        if os.path.exists(output_path):
+            os.remove(output_path)
+    return None
+
+
+def send_video_alert(username: str, post_url: str, video_id: str, now_str: str) -> bool:
+    """Télécharge et envoie le fichier vidéo directement sur Discord (sans mentionner le pseudo)."""
+    if not DISCORD_WEBHOOK_URL:
+        print("❌ ERROR: DISCORD_WEBHOOK_SOCIAL secret is missing!")
+        return False
+
     has_id = PING_USER_ID.isdigit()
     mention = f"<@{PING_USER_ID}>" if has_id else ""
+    allowed_mentions = {"users": [PING_USER_ID] if has_id else []}
 
-    embed = {
-        "title": "nouvelle vidéo",
-        "description": f"👉 **[Ouvrir la vidéo]({post_url})**",
-        "url": post_url,
-        "color": 16711760,
-        "footer": {"text": f"Détecté à {now_str}"},
-    }
+    # 1) Tentative d'envoi du vrai fichier .mp4 directement dans Discord
+    video_path = download_tiktok_video(post_url, video_id)
+    if video_path:
+        try:
+            payload = {
+                "username": "Alert Bot",
+                "content": f"{mention} nouvelle vidéo".strip(),
+                "allowed_mentions": allowed_mentions,
+            }
+            with open(video_path, "rb") as f:
+                res = requests.post(
+                    DISCORD_WEBHOOK_URL,
+                    data={"payload_json": json.dumps(payload)},
+                    files={"file": (f"video_{video_id}.mp4", f, "video/mp4")},
+                    timeout=60,
+                )
+            os.remove(video_path)
+            print(f"   [DISCORD FILE UPLOAD] Status {res.status_code}")
+            if res.status_code in (200, 204):
+                return True
+        except Exception as e:
+            print(f"   [DISCORD UPLOAD ERROR] {e}")
+            if os.path.exists(video_path):
+                os.remove(video_path)
+
+    # 2) Plan B (si vidéo > 9.5 Mo ou téléchargement bloqué) :
+    # Utilise tnktok.com qui intègre directement le lecteur vidéo téléchargeable dans Discord
+    embed_video_url = post_url.replace("www.tiktok.com", "tnktok.com")
     payload = {
         "username": "Alert Bot",
-        "content": f"{mention} nouvelle vidéo".strip(),
-        "embeds": [embed],
-        # Only this user can be pinged (never @everyone)
-        "allowed_mentions": {"users": [PING_USER_ID] if has_id else []},
+        "content": f"{mention} nouvelle vidéo\n{embed_video_url}".strip(),
+        "allowed_mentions": allowed_mentions,
     }
     return post_to_discord(payload)
 
@@ -185,7 +245,7 @@ async def main():
             if age_seconds is not None and age_seconds <= MAX_AGE_SECONDS:
                 print(f"   🔥 NEW TIKTOK ({age_seconds // 60} min ago): {post_url}")
                 # Only remember it if the alert really went out
-                if send_video_alert(user, post_url, now_str):
+                if send_video_alert(user, post_url, vid, now_str):
                     save_seen(key)
                     seen.add(key)
                     alerts_sent += 1

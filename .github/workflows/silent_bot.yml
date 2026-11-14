@@ -1,0 +1,40 @@
+name: Silent TikTok Bot
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # Runs every 30 minutes
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-tiktok:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests playwright playwright-stealth yt-dlp
+          playwright install chromium
+
+      - name: Run Silent TikTok Bot
+        env:
+          DISCORD_WEBHOOK_SILENT: ${{ secrets.DISCORD_WEBHOOK_SILENT }}
+        run: python silent_tiktok_bot.py
+
+      - name: Save seen posts
+        run: |
+          git config --global user.name "Alert Bot"
+          git config --global user.email "bot@noreply.github.com"
+          git pull --rebase || true
+          git add seen_silent_posts.txt || true
+          git commit -m "Update seen_silent_posts.txt" || exit 0
+          git push

@@ -1,10 +1,9 @@
 name: Archive TikTok Profile
 
 on:
-  workflow_dispatch:
-  # Optional: uncomment below to auto-archive 15 videos every 2 hours until finished
-  # schedule:
-  #   - cron: '0 */2 * * *'
+  schedule:
+    - cron: '0 */2 * * *' # Se lance automatiquement toutes les 2 heures
+  workflow_dispatch:       # Garde aussi le bouton manuel "Run workflow"
 
 permissions:
   contents: write

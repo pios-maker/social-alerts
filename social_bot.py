@@ -19,6 +19,7 @@ TIKTOK_USERS = [
     "meyxdollw",
     "mahsa9946",
     "yxsaie3",
+    "notalessia2.0",
 ]
 
 MAX_AGE_SECONDS = 10800

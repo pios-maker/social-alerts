@@ -12,7 +12,7 @@ from playwright_stealth import Stealth
 # SETTINGS
 # ==========================================
 TARGET_USER = "apparentlysalma"       # TikTok username to archive (without @)
-BATCH_SIZE = 15               # Max videos to download & upload per run (prevents timeouts/bans)
+BATCH_SIZE = 30               # Max videos to download & upload per run (prevents timeouts/bans)
 MAX_DISCORD_FILE_MB = 9.5
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_ARCHIVE")

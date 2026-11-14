@@ -1,0 +1,41 @@
+name: Archive TikTok Profile
+
+on:
+  workflow_dispatch:
+  # Optional: uncomment below to auto-archive 15 videos every 2 hours until finished
+  # schedule:
+  #   - cron: '0 */2 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  archive-tiktok:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests playwright playwright-stealth yt-dlp
+          playwright install chromium
+
+      - name: Run Archive Bot
+        env:
+          DISCORD_WEBHOOK_ARCHIVE: ${{ secrets.DISCORD_WEBHOOK_ARCHIVE }}
+        run: python archive_tiktok_bot.py
+
+      - name: Save archive progress
+        run: |
+          git config --global user.name "Archive Bot"
+          git config --global user.email "bot@noreply.github.com"
+          git pull --rebase || true
+          git add archived_*.txt || true
+          git commit -m "Update TikTok archive progress" || exit 0
+          git push

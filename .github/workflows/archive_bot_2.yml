@@ -1,0 +1,40 @@
+name: Archive TikTok Profile 2
+
+on:
+  schedule:
+    - cron: '30 */2 * * *' # Se lance toutes les 2 heures (à :30 pour éviter tout conflit avec le bot 1)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  archive-tiktok-2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests playwright playwright-stealth yt-dlp
+          playwright install chromium
+
+      - name: Run Archive Bot 2
+        env:
+          DISCORD_WEBHOOK_ARCHIVE_2: ${{ secrets.DISCORD_WEBHOOK_ARCHIVE_2 }}
+        run: python archive_tiktok_bot_2.py
+
+      - name: Save archive progress
+        run: |
+          git config --global user.name "Archive Bot 2"
+          git config --global user.email "bot@noreply.github.com"
+          git pull --rebase || true
+          git add archived_*.txt || true
+          git commit -m "Update TikTok archive 2 progress" || exit 0
+          git push

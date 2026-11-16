@@ -15,7 +15,7 @@ TARGET_USER = "angelina_deoll"       # TikTok username to archive (without @)
 BATCH_SIZE = 30               # Max videos to download & upload per run (prevents timeouts/bans)
 MAX_DISCORD_FILE_MB = 9.5
 
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_ARCHIVE")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_ARCHIVE_2")
 MEMORY_FILE = f"archived_{TARGET_USER}.txt"
 
 

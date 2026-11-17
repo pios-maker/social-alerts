@@ -1,0 +1,40 @@
+name: Meyx TikTok Monitor
+
+on:
+  schedule:
+    - cron: '10,40 * * * *' # Runs every 30 minutes (offset at :10 and :40 to avoid git conflicts)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  monitor-meyx:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests playwright playwright-stealth yt-dlp
+          playwright install chromium
+
+      - name: Run Meyx Bot
+        env:
+          DISCORD_WEBHOOK_MEYX: ${{ secrets.DISCORD_WEBHOOK_MEYX }}
+        run: python meyx_bot.py
+
+      - name: Save seen posts
+        run: |
+          git config --global user.name "Meyx Bot"
+          git config --global user.email "bot@noreply.github.com"
+          git pull --rebase || true
+          git add seen_meyx_posts.txt || true
+          git commit -m "Update seen_meyx_posts.txt" || exit 0
+          git push

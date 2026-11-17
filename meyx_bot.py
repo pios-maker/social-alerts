@@ -11,10 +11,9 @@ from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 
 # ==========================================
-# SETTINGS
+# SETTINGS (BULK SEND MODE)
 # ==========================================
 TARGET_USER = "meyxdollw"
-MAX_AGE_SECONDS = 21600  # 6 hours
 PING_USER_ID = "644995150774272020"
 MAX_DISCORD_FILE_MB = 9.5
 
@@ -33,13 +32,6 @@ def load_seen() -> set:
 def save_seen(item_id: str):
     with open(MEMORY_FILE, "a", encoding="utf-8") as f:
         f.write(f"{item_id}\n")
-
-
-def get_tiktok_timestamp(video_id: str) -> int:
-    try:
-        return int(video_id) >> 32
-    except Exception:
-        return 0
 
 
 def post_to_discord(payload: dict) -> bool:
@@ -225,14 +217,14 @@ def send_alert(username: str, post_url: str, video_id: str) -> bool:
     return post_to_discord(payload)
 
 
-def get_tiktok_via_ytdlp(user: str) -> list:
+def get_all_tiktok_via_ytdlp(user: str) -> list:
     video_ids = []
     try:
         cmd = [
-            "yt-dlp", "--flat-playlist", "--playlist-end", "15", "--print", "id",
+            "yt-dlp", "--flat-playlist", "--print", "id",
             f"https://www.tiktok.com/@{user}",
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         for line in res.stdout.splitlines():
             clean = line.strip()
             if clean.isdigit() and len(clean) >= 15 and clean not in video_ids:
@@ -256,10 +248,11 @@ async def get_tiktok_via_browser(user: str) -> list:
         )
         page = await context.new_page()
         try:
-            await page.goto(f"https://www.tiktok.com/@{user}", wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(4000)
-            await page.evaluate("window.scrollBy(0, 1000)")
-            await page.wait_for_timeout(1500)
+            await page.goto(f"https://www.tiktok.com/@{user}", wait_until="domcontentloaded", timeout=45000)
+            await page.wait_for_timeout(3000)
+            for _ in range(10):
+                await page.evaluate("window.scrollBy(0, 1500)")
+                await page.wait_for_timeout(1500)
             html = await page.content()
             pattern = rf"/(?:@{re.escape(user)}/)?(?:video|photo)/(\d{{15,22}})"
             for m in re.findall(pattern, html):
@@ -268,44 +261,35 @@ async def get_tiktok_via_browser(user: str) -> list:
         except Exception as e:
             print(f"   [!] Browser error: {e}")
         await browser.close()
-    return video_ids[:15]
+    return video_ids
 
 
 async def main():
     now_be = datetime.now(TZ)
-    now_ts = int(time.time())
-    print(f"=== CHECKING @{TARGET_USER} ({now_be.strftime('%Y-%m-%d %H:%M:%S')}) ===")
+    print(f"=== BULK SENDING ALL POSTS FOR @{TARGET_USER} ({now_be.strftime('%Y-%m-%d %H:%M:%S')}) ===")
 
     seen = load_seen()
 
-    # Merge both sources so cached yt-dlp results never hide fresh browser posts
-    ytdlp_ids = get_tiktok_via_ytdlp(TARGET_USER)
+    ytdlp_ids = get_all_tiktok_via_ytdlp(TARGET_USER)
     browser_ids = await get_tiktok_via_browser(TARGET_USER)
     all_ids = list(dict.fromkeys(ytdlp_ids + browser_ids))
 
-    print(f"   {len(all_ids)} unique posts found (yt-dlp: {len(ytdlp_ids)}, browser: {len(browser_ids)})")
+    # Sort oldest-first so your channel receives them in chronological order
+    pending_ids = sorted([vid for vid in all_ids if f"TT_{vid}" not in seen], key=int)
+    print(f"   Total found: {len(all_ids)} | Unsent to send now: {len(pending_ids)}")
 
-    for vid in all_ids:
+    sent_count = 0
+    for vid in pending_ids:
         key = f"TT_{vid}"
-        if key in seen:
-            continue
-
-        vid_ts = get_tiktok_timestamp(vid)
-        age_seconds = now_ts - vid_ts if vid_ts > 0 else None
         post_url = f"https://www.tiktok.com/@{TARGET_USER}/video/{vid}"
-
-        if age_seconds is not None and age_seconds <= MAX_AGE_SECONDS:
-            print(f"   🔥 NEW POST ({age_seconds // 60} min ago): {post_url}")
-            if send_alert(TARGET_USER, post_url, vid):
-                save_seen(key)
-                seen.add(key)
-        else:
-            age_min = (age_seconds // 60) if age_seconds is not None else -1
-            print(f"   [SKIP] {vid} ({age_min} min ago)")
+        print(f"   🔥 SENDING ({sent_count + 1}/{len(pending_ids)}): {post_url}")
+        if send_alert(TARGET_USER, post_url, vid):
             save_seen(key)
             seen.add(key)
+            sent_count += 1
+            time.sleep(3)
 
-    print("=== CHECK COMPLETE ===")
+    print(f"=== BULK COMPLETE: {sent_count} sent ===")
 
 
 if __name__ == "__main__":

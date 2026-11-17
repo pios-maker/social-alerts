@@ -20,7 +20,7 @@ TIKTOK_USERS = [
     "apparentlysalma",
 ]
 
-MAX_AGE_SECONDS = 10800  # 3 hours
+MAX_AGE_SECONDS = 21600  # 6 heures (au lieu de 3h pour éviter de rater les posts)
 PING_USER_ID = "644995150774272020"
 
 # Use a separate webhook secret if you want this in a different channel
@@ -76,7 +76,7 @@ def get_tiktok_via_ytdlp(user: str) -> list:
     video_ids = []
     try:
         cmd = [
-            "yt-dlp", "--flat-playlist", "--playlist-end", "6", "--print", "id",
+            "yt-dlp", "--flat-playlist", "--playlist-end", "12", "--print", "id",
             f"https://www.tiktok.com/@{user}",
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -113,7 +113,7 @@ async def get_tiktok_via_browser(user: str) -> list:
         except Exception as e:
             print(f"   [!] TikTok browser error for @{user}: {e}")
         await browser.close()
-    return video_ids[:6]
+    return video_ids[:12]
 
 
 async def main():
@@ -143,11 +143,13 @@ async def main():
             age_seconds = now_ts - vid_ts if vid_ts > 0 else None
 
             if age_seconds is not None and age_seconds <= MAX_AGE_SECONDS:
-                print(f"   🔥 NEW POST DETECTED ({age_seconds // 60} min ago)")
+                print(f"   🔥 NEW POST DETECTED ({age_seconds // 60} min ago) -> {vid}")
                 if send_minimal_alert():
                     save_seen(key)
                     seen.add(key)
             else:
+                age_min = (age_seconds // 60) if age_seconds is not None else -1
+                print(f"   [SKIP] Old post {vid} ({age_min} min ago)")
                 save_seen(key)
                 seen.add(key)
 
